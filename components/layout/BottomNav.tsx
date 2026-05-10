@@ -7,7 +7,6 @@ type Props = {
 
 const items = [
   { key: "lobby" as const, href: "/lobby", icon: "casino", label: "Lobby" },
-  { key: "tables" as const, href: "/lobby", icon: "style", label: "Tables" },
   { key: "stats" as const, href: "/profile", icon: "analytics", label: "Stats" },
   { key: "shop" as const, href: "/cashier", icon: "shopping_bag", label: "Shop" },
 ];

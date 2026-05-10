@@ -278,7 +278,7 @@ function settleShowdown(state: GameState): void {
   state.pot = 0;
 }
 
-function advanceAfterAction(state: GameState): void {
+function advanceAfterAction(state: GameState, deferDeal: boolean = false): void {
   const stillActive = state.seats.filter((s) => s.status === "active");
   const liveCount = state.seats.filter(
     (s) => s.status === "active" || s.status === "allin",
@@ -325,17 +325,74 @@ function advanceAfterAction(state: GameState): void {
     return;
   }
 
+  if (deferDeal) {
+    // Don't deal the new street's cards yet — set a pending marker so the UI
+    // can render the round-closing action first, then reveal cards on a
+    // subsequent tick.
+    state.pendingDeal = state.street;
+    state.toActIdx = -1;
+    return;
+  }
+
   dealStreet(state);
   log(state, `Dealing ${state.street}: ${state.board.map(cardToString).join(", ")}`);
 
   // If only one active player but multiple all-ins, no betting — auto-advance
   if (stillActive.length <= 1) {
-    advanceAfterAction(state);
+    advanceAfterAction(state, deferDeal);
     return;
   }
 
   // First to act post-flop: first active seat clockwise from dealer
   state.toActIdx = nextActiveSeat(state, state.dealerIdx);
+}
+
+/**
+ * Reveal the cards for a street that was queued by the previous action.
+ * Returns the next state with cards on the board and the right toActIdx.
+ * If no betting is possible (e.g., all-in run-out), queues the next deal.
+ */
+export function revealPendingStreet(state: GameState): GameState {
+  if (!state.pendingDeal) return state;
+  const next: GameState = {
+    ...state,
+    seats: state.seats.map((s) => ({ ...s })),
+    deck: state.deck.slice(),
+    board: state.board.slice(),
+    log: state.log.slice(),
+  };
+  dealStreet(next);
+  log(next, `Dealing ${next.street}: ${next.board.map(cardToString).join(", ")}`);
+  next.pendingDeal = null;
+
+  const stillActive = next.seats.filter((s) => s.status === "active").length;
+  if (stillActive <= 1) {
+    // No more betting on this street. Either queue the next street or
+    // run straight to showdown.
+    const nextStreet: Record<Street, Street> = {
+      preflop: "flop",
+      flop: "turn",
+      turn: "river",
+      river: "showdown",
+      showdown: "ended",
+      ended: "ended",
+    };
+    const after = nextStreet[next.street];
+    if (after === "showdown" || after === "ended") {
+      next.street = "showdown";
+      settleShowdown(next);
+      next.street = "ended";
+      next.toActIdx = -1;
+    } else {
+      next.street = after;
+      next.pendingDeal = after;
+      next.toActIdx = -1;
+    }
+    return next;
+  }
+
+  next.toActIdx = nextActiveSeat(next, next.dealerIdx);
+  return next;
 }
 
 export class IllegalActionError extends Error {}
@@ -403,7 +460,12 @@ function validateAction(state: GameState, seatIdx: number, action: Action): void
   }
 }
 
-export function applyAction(state: GameState, seatIdx: number, action: Action): GameState {
+export function applyAction(
+  state: GameState,
+  seatIdx: number,
+  action: Action,
+  opts?: { deferDeal?: boolean },
+): GameState {
   const next: GameState = {
     ...state,
     seats: state.seats.map((s) => ({ ...s })),
@@ -507,7 +569,7 @@ export function applyAction(state: GameState, seatIdx: number, action: Action): 
     }
   }
 
-  advanceAfterAction(next);
+  advanceAfterAction(next, opts?.deferDeal ?? false);
   return next;
 }
 

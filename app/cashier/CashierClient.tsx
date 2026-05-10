@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { formatChips } from "@/lib/format";
 
@@ -26,6 +27,7 @@ const TXN_HISTORY = [
 ];
 
 export function CashierClient({ initialBankroll, initialLastClaimAt }: Props) {
+  const router = useRouter();
   const [bankroll, setBankroll] = useState(initialBankroll);
   const [lastClaimAt, setLastClaimAt] = useState<number | null>(initialLastClaimAt);
   const [busy, setBusy] = useState(false);
@@ -48,6 +50,10 @@ export function CashierClient({ initialBankroll, initialLastClaimAt }: Props) {
         setBankroll(data.bankroll);
         setLastClaimAt(Date.now());
         setMessage(`+${formatChips(data.awarded)} added to your bankroll`);
+        // Force the server-rendered TopBar (and any other server components)
+        // to re-render with the new bankroll. Without this, the chip pill in
+        // the header keeps showing the pre-claim balance.
+        router.refresh();
       }
     } finally {
       setBusy(false);

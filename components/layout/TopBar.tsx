@@ -51,7 +51,6 @@ export function TopBar({ bankroll, username, email, avatarUrl, active = "lobby",
           </Link>
           <nav className="hidden md:flex gap-6">
             <Link href="/lobby" className={linkClass("lobby")}>Lobby</Link>
-            <Link href="/lobby" className={linkClass("tables")}>Tables</Link>
             <Link href="/profile" className={linkClass("profile") + " " + linkClass("stats")}>Profile</Link>
             <Link href="/cashier" className={linkClass("cashier")}>Cashier</Link>
           </nav>

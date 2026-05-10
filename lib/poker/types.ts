@@ -59,6 +59,11 @@ export type GameState = {
   handNumber: number;
   log: LogEntry[];
   lastShowdown: ShowdownResult | null;
+  // When set, a betting round just ended and the next street's cards are
+  // waiting to be dealt. revealPendingStreet() flips the cards and resets
+  // toActIdx. Splitting this from the closing action lets the UI render
+  // the action first, then the cards a tick later.
+  pendingDeal?: Street | null;
 };
 
 export type HandCategory =

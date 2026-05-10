@@ -1,4 +1,4 @@
-import { addPlayer, applyAction, createTable, IllegalActionError, publicView, startHand } from "@/lib/poker/engine";
+import { addPlayer, applyAction, createTable, IllegalActionError, publicView, revealPendingStreet, startHand } from "@/lib/poker/engine";
 import { botAction } from "@/lib/poker/bot";
 import { getTable as getTableSpec } from "@/lib/tables";
 import type { Action, GameState } from "@/lib/poker/types";
@@ -125,6 +125,16 @@ export async function tickTable(args: { tableId: string; userId: string }): Prom
   if (!runtime || runtime.userId !== args.userId) return;
   const s = runtime.state;
 
+  // 1. If a street deal is queued from the previous tick (the round-closing
+  //    action), reveal it now. This is what produces the visible delay
+  //    between the closing action and the flop/turn/river cards.
+  if (s.pendingDeal) {
+    runtime.state = revealPendingStreet(s);
+    await commitRuntime(args.tableId, runtime);
+    return;
+  }
+
+  // 2. Hand over — roll into the next one if both sides still have chips.
   if (s.street === "ended") {
     onHandEnded(runtime);
     const userSeat = s.seats[runtime.userSeatIdx];
@@ -142,12 +152,14 @@ export async function tickTable(args: { tableId: string; userId: string }): Prom
   if (s.toActIdx === runtime.userSeatIdx) return; // user's turn — wait
   if (s.toActIdx < 0) return;
 
+  // 3. One bot action per tick — deferDeal so the round-closing action
+  //    doesn't bundle the next street's cards into the same response.
   const action = botAction(s, s.toActIdx);
   try {
-    runtime.state = applyAction(s, s.toActIdx, action);
+    runtime.state = applyAction(s, s.toActIdx, action, { deferDeal: true });
   } catch (e) {
     if (e instanceof IllegalActionError) {
-      runtime.state = applyAction(s, s.toActIdx, { type: "fold" });
+      runtime.state = applyAction(s, s.toActIdx, { type: "fold" }, { deferDeal: true });
     } else {
       throw e;
     }
@@ -183,13 +195,15 @@ export async function actAtTable(args: {
     return { ok: false, error: "Not your turn" };
   }
   try {
-    runtime.state = applyAction(runtime.state, runtime.userSeatIdx, args.action);
+    runtime.state = applyAction(runtime.state, runtime.userSeatIdx, args.action, { deferDeal: true });
   } catch (e) {
     if (e instanceof IllegalActionError) return { ok: false, error: e.message };
     throw e;
   }
   // Do not chain bot actions here; tickTable handles them one per poll
-  // so the client can render each move with a visible delay.
+  // so the client can render each move with a visible delay. If this
+  // action closed the betting round, pendingDeal is set so the next poll
+  // reveals the new community cards on its own tick.
   await commitRuntime(args.tableId, runtime);
   return { ok: true };
 }
