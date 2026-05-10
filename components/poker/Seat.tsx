@@ -1,4 +1,4 @@
-import type { Seat as SeatType, Card as CardType } from "@/lib/poker/types";
+import type { Seat as SeatType } from "@/lib/poker/types";
 import { PlayingCard } from "./Card";
 import { formatChips } from "@/lib/format";
 
@@ -13,7 +13,9 @@ type Props = {
 
 export function Seat({ seat, isMe, isToAct, isDealer, isSB, isBB }: Props) {
   const folded = seat.status === "folded";
+  const sittingOut = seat.status === "sittingout";
   const allin = seat.status === "allin";
+  const inHand = seat.status === "active" || allin;
 
   const stackText = allin ? "ALL-IN" : formatChips(seat.stack);
   const accent = isToAct
@@ -22,10 +24,20 @@ export function Seat({ seat, isMe, isToAct, isDealer, isSB, isBB }: Props) {
 
   const badge = isDealer ? "D" : isSB ? "SB" : isBB ? "BB" : null;
 
+  // Opponent card display: face-down backs while in the hand, face-up at
+  // showdown (publicView reveals hole when the hand ends).
+  const opponentHasRevealedCards = !isMe && inHand && seat.hole !== null;
+  const opponentHasHiddenCards = !isMe && inHand && seat.hole === null;
+
   return (
-    <div className={`flex flex-col items-center gap-2 ${folded ? "opacity-40" : ""}`}>
-      <div className="flex gap-1 -mb-1">
-        {!isMe && (seat.hole === null ? null : <CardBacks count={2} />)}
+    <div className={`flex flex-col items-center gap-2 ${folded || sittingOut ? "opacity-40" : ""}`}>
+      <div className="flex gap-1 -mb-1 min-h-[3.5rem]">
+        {opponentHasHiddenCards && (
+          <>
+            <PlayingCard faceDown size="sm" />
+            <PlayingCard faceDown size="sm" />
+          </>
+        )}
       </div>
       <div className={`w-16 h-16 rounded-full border-4 ${accent} overflow-hidden shadow-xl bg-surface-container-high flex items-center justify-center text-on-surface font-bold text-xl`}>
         {seat.displayName.slice(0, 1).toUpperCase()}
@@ -49,23 +61,13 @@ export function Seat({ seat, isMe, isToAct, isDealer, isSB, isBB }: Props) {
           <PlayingCard card={seat.hole[1]} size="md" />
         </div>
       )}
-      {!isMe && seat.hole !== null && (
+      {opponentHasRevealedCards && seat.hole && (
         <div className="flex gap-1 mt-1">
           <PlayingCard card={seat.hole[0]} size="sm" />
           <PlayingCard card={seat.hole[1]} size="sm" />
         </div>
       )}
     </div>
-  );
-}
-
-function CardBacks({ count }: { count: number }) {
-  return (
-    <>
-      {Array.from({ length: count }).map((_, i) => (
-        <PlayingCard key={i} faceDown size="sm" />
-      ))}
-    </>
   );
 }
 

@@ -30,7 +30,12 @@ type Runtime = {
   userSeatIdx: number;
   startOfHandUserStack: number;
   buyIn: number;
+  // Set when the current hand ends, so we can hold the showdown view for
+  // a few seconds before rolling over to the next hand.
+  endedAt?: number;
 };
+
+const HAND_END_PAUSE_MS = 4500;
 
 function runtimeKey(tableId: string): string {
   return `runtime:${tableId}`;
@@ -134,9 +139,18 @@ export async function tickTable(args: { tableId: string; userId: string }): Prom
     return;
   }
 
-  // 2. Hand over — roll into the next one if both sides still have chips.
+  // 2. Hand over — hold the showdown view for HAND_END_PAUSE_MS so the user
+  //    can see the winner banner, then roll into the next one.
   if (s.street === "ended") {
-    onHandEnded(runtime);
+    if (!runtime.endedAt) {
+      onHandEnded(runtime);
+      runtime.endedAt = Date.now();
+      await commitRuntime(args.tableId, runtime);
+      return;
+    }
+    if (Date.now() - runtime.endedAt < HAND_END_PAUSE_MS) {
+      return; // still showing the winner
+    }
     const userSeat = s.seats[runtime.userSeatIdx];
     const otherWithChips = s.seats.some((seat, i) => i !== runtime.userSeatIdx && seat.stack > 0);
     if (userSeat.stack > 0 && otherWithChips) {
@@ -144,6 +158,7 @@ export async function tickTable(args: { tableId: string; userId: string }): Prom
       runtime.startOfHandUserStack =
         runtime.state.seats[runtime.userSeatIdx].stack +
         runtime.state.seats[runtime.userSeatIdx].contributed;
+      runtime.endedAt = undefined;
       await commitRuntime(args.tableId, runtime);
     }
     return;

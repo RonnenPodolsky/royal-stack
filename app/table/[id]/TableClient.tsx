@@ -163,16 +163,38 @@ export function TableClient({ tableId, initialState, initialMySeatIdx, initialBa
                     isSB={idx === sbIdx}
                     isBB={idx === bbIdx}
                   />
-                  {seat.betThisStreet > 0 && (
-                    <div className="absolute left-1/2 -translate-x-1/2 -bottom-8 bg-secondary/20 border border-secondary/40 px-2 py-0.5 rounded-full">
-                      <span className="font-stat text-secondary text-xs">
-                        {formatChips(seat.betThisStreet)}
-                      </span>
-                    </div>
-                  )}
                 </div>
               );
             })}
+
+            {/* Chip stacks placed between each betting seat and the pot */}
+            {state.seats.map((seat, idx) => {
+              const pos = positions[idx];
+              if (!pos || seat.betThisStreet <= 0) return null;
+              const seatLeft = parseFloat(pos.left);
+              const seatTop = parseFloat(pos.top);
+              // 40% of the way from the seat toward the table center.
+              const chipLeft = seatLeft + (50 - seatLeft) * 0.4;
+              const chipTop = seatTop + (50 - seatTop) * 0.4;
+              return (
+                <div
+                  key={`bet-${seat.id}`}
+                  className="absolute z-20"
+                  style={{
+                    left: `${chipLeft}%`,
+                    top: `${chipTop}%`,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                >
+                  <ChipStack amount={seat.betThisStreet} />
+                </div>
+              );
+            })}
+
+            {/* Winner banner at hand end */}
+            {state.street === "ended" && state.lastShowdown && state.lastShowdown.winners.length > 0 && (
+              <WinnerBanner state={state} />
+            )}
           </div>
 
           {/* Hand log + leave */}
@@ -232,5 +254,74 @@ export function TableClient({ tableId, initialState, initialMySeatIdx, initialBa
       <ActionBar state={state} mySeatIdx={mySeatIdx} busy={busy} onAction={sendAction} />
       <BottomNav active="tables" />
     </>
+  );
+}
+
+function ChipStack({ amount }: { amount: number }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <div className="relative w-7 h-5">
+        <div className="absolute inset-x-0 bottom-0 h-2 rounded-full bg-gradient-to-b from-secondary-fixed to-secondary border border-white/30 shadow-md" />
+        <div className="absolute inset-x-0 bottom-1.5 h-2 rounded-full bg-gradient-to-b from-secondary to-secondary-container border border-white/30 shadow-md" />
+        <div className="absolute inset-x-0 bottom-3 h-2 rounded-full bg-gradient-to-b from-secondary-fixed to-secondary border border-white/30 shadow-md" />
+      </div>
+      <span className="font-stat text-secondary text-[11px] bg-surface/80 backdrop-blur-sm px-1.5 py-0.5 rounded">
+        {formatChips(amount)}
+      </span>
+    </div>
+  );
+}
+
+function WinnerBanner({ state }: { state: GameState }) {
+  if (!state.lastShowdown) return null;
+  const winners = state.lastShowdown.winners;
+  const total = winners.reduce((sum, w) => sum + w.amount, 0);
+  // Group winners by seatIdx to show one row per player (multi-pot splits).
+  const byIdx = new Map<number, { amount: number; bestHand?: typeof winners[number]["bestHand"] }>();
+  for (const w of winners) {
+    const prev = byIdx.get(w.seatIdx);
+    byIdx.set(w.seatIdx, {
+      amount: (prev?.amount ?? 0) + w.amount,
+      bestHand: w.bestHand ?? prev?.bestHand,
+    });
+  }
+  const handLabel: string[] = [
+    "High Card",
+    "Pair",
+    "Two Pair",
+    "Three of a Kind",
+    "Straight",
+    "Flush",
+    "Full House",
+    "Four of a Kind",
+    "Straight Flush",
+  ];
+  return (
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[150%] z-40 pointer-events-none">
+      <div className="bg-gradient-to-r from-secondary/20 via-secondary/40 to-secondary/20 border-2 border-secondary px-8 py-4 rounded-xl shadow-[0_0_40px_rgba(217,119,6,0.55)] backdrop-blur-md min-w-[280px]">
+        <p className="font-label text-label-caps text-secondary text-center mb-2">WINNER</p>
+        <div className="space-y-1">
+          {Array.from(byIdx.entries()).map(([idx, info]) => {
+            const seat = state.seats[idx];
+            return (
+              <div key={idx} className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-display text-headline-sm text-white leading-tight">{seat.displayName}</p>
+                  {info.bestHand && (
+                    <p className="text-[11px] text-secondary/80">{handLabel[info.bestHand.category]}</p>
+                  )}
+                </div>
+                <p className="font-stat text-stat-lg text-secondary">+{formatChips(info.amount)}</p>
+              </div>
+            );
+          })}
+        </div>
+        {byIdx.size > 1 && (
+          <p className="text-[10px] text-on-surface-variant text-center mt-2">
+            Split pot — total {formatChips(total)}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
