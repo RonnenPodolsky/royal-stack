@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/server/session";
+import { getSessionUserId, isAuthenticated } from "@/lib/server/session";
 import { claimDailyChips, getUser } from "@/lib/server/users";
 
 const DAILY_AMOUNT = 5000;
 
 export async function POST() {
+  if (!(await isAuthenticated())) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const result = claimDailyChips(userId, DAILY_AMOUNT);

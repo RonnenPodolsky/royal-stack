@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import { getOrCreateSessionUser } from "@/lib/server/session";
+import { getOrCreateSessionUser, isAuthenticated } from "@/lib/server/session";
 
 export async function GET() {
+  if (!(await isAuthenticated())) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
   const user = await getOrCreateSessionUser();
   return NextResponse.json({
     id: user.id,

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getOrCreateSessionUser } from "@/lib/server/session";
+import { getOrCreateSessionUser, isAuthenticated } from "@/lib/server/session";
 import { getMySeatIdx, getPublicState, joinTable } from "@/lib/server/tables";
 import { getTable } from "@/lib/tables";
 import { TableClient } from "./TableClient";
@@ -10,6 +10,10 @@ export default async function TablePage({ params }: { params: Params }) {
   const { id } = await params;
   const spec = getTable(id);
   if (!spec) redirect("/lobby");
+
+  if (!(await isAuthenticated())) {
+    redirect(`/login?callbackUrl=${encodeURIComponent(`/table/${id}`)}`);
+  }
 
   const user = await getOrCreateSessionUser();
   const result = await joinTable({ tableId: id, userId: user.id });

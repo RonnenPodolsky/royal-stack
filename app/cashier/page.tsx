@@ -1,10 +1,14 @@
+import { redirect } from "next/navigation";
 import { TopBar } from "@/components/layout/TopBar";
 import { SideNav } from "@/components/layout/SideNav";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { getOrCreateSessionUser } from "@/lib/server/session";
+import { getOrCreateSessionUser, isAuthenticated } from "@/lib/server/session";
 import { CashierClient } from "./CashierClient";
 
 export default async function CashierPage() {
+  if (!(await isAuthenticated())) {
+    redirect("/login?callbackUrl=%2Fcashier");
+  }
   const user = await getOrCreateSessionUser();
   return (
     <>

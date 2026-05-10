@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/server/session";
+import { getSessionUserId, isAuthenticated } from "@/lib/server/session";
 import { actAtTable, getMySeatIdx, getPublicState } from "@/lib/server/tables";
 import type { Action } from "@/lib/poker/types";
 
@@ -30,6 +30,9 @@ function parseAction(body: unknown): Action | null {
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
+  if (!(await isAuthenticated())) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 

@@ -1,12 +1,16 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { TopBar } from "@/components/layout/TopBar";
 import { SideNav } from "@/components/layout/SideNav";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Icon } from "@/components/ui/Icon";
-import { getOrCreateSessionUser } from "@/lib/server/session";
+import { getOrCreateSessionUser, isAuthenticated } from "@/lib/server/session";
 import { formatChips } from "@/lib/format";
 
 export default async function ProfilePage() {
+  if (!(await isAuthenticated())) {
+    redirect("/login?callbackUrl=%2Fprofile");
+  }
   const user = await getOrCreateSessionUser();
   const netProfit = user.netProfit || 4210;
   const hands = user.handsPlayed || 142;
