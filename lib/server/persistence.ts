@@ -3,7 +3,6 @@ import path from "node:path";
 import { Redis } from "@upstash/redis";
 
 const DATA_DIR = path.resolve(process.cwd(), ".data");
-const SAVE_DEBOUNCE_MS = 500;
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
@@ -11,7 +10,15 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_
 const redis = REDIS_URL && REDIS_TOKEN ? new Redis({ url: REDIS_URL, token: REDIS_TOKEN }) : null;
 
 function ensureDir(): void {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function fileKeyPath(key: string): string {
+  // Allow slashes in keys (e.g. "user:abc"). Replace any path separators
+  // with a safe filesystem character so we don't break out of DATA_DIR.
+  return path.join(DATA_DIR, key.replace(/[/\\]/g, "_") + ".json");
 }
 
 export async function loadJSON<T>(key: string, fallback: T): Promise<T> {
@@ -25,7 +32,7 @@ export async function loadJSON<T>(key: string, fallback: T): Promise<T> {
     }
   }
   try {
-    const filepath = path.join(DATA_DIR, key);
+    const filepath = fileKeyPath(key);
     if (!fs.existsSync(filepath)) return fallback;
     const raw = fs.readFileSync(filepath, "utf-8");
     return JSON.parse(raw) as T;
@@ -34,11 +41,6 @@ export async function loadJSON<T>(key: string, fallback: T): Promise<T> {
   }
 }
 
-/**
- * Immediate (not debounced) save. Use for state that MUST be durable before
- * the current request returns — e.g. live game state on a serverless platform
- * where the next request may hit a different function instance.
- */
 export async function saveJSON(
   key: string,
   data: unknown,
@@ -52,9 +54,8 @@ export async function saveJSON(
     }
     return;
   }
-  // File backend ignores TTL (used for local dev only).
   ensureDir();
-  const filepath = path.join(DATA_DIR, key);
+  const filepath = fileKeyPath(key);
   const tmpPath = `${filepath}.tmp`;
   await fs.promises.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8");
   await fs.promises.rename(tmpPath, filepath);
@@ -65,33 +66,32 @@ export async function deleteJSON(key: string): Promise<void> {
     await redis.del(key);
     return;
   }
-  const filepath = path.join(DATA_DIR, key);
+  const filepath = fileKeyPath(key);
   if (fs.existsSync(filepath)) await fs.promises.unlink(filepath);
 }
 
-const pending = new Map<string, NodeJS.Timeout>();
-
-export function scheduleSave(key: string, getData: () => unknown): void {
-  const existing = pending.get(key);
-  if (existing) clearTimeout(existing);
-  const timer = setTimeout(async () => {
-    pending.delete(key);
-    try {
-      const data = getData();
-      if (redis) {
-        await redis.set(key, data);
-      } else {
-        ensureDir();
-        const filepath = path.join(DATA_DIR, key);
-        const tmpPath = `${filepath}.tmp`;
-        await fs.promises.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8");
-        await fs.promises.rename(tmpPath, filepath);
-      }
-    } catch (e) {
-      console.error(`[persistence] failed to save ${key}:`, e);
-    }
-  }, SAVE_DEBOUNCE_MS);
-  pending.set(key, timer);
+/**
+ * Return all keys matching a prefix-glob (e.g. "user:*"). Used by code that
+ * needs to enumerate (lobby player count, etc.). Atomic mutations should
+ * never depend on this — read/write per individual key.
+ */
+export async function listKeys(pattern: string): Promise<string[]> {
+  if (redis) {
+    const keys: string[] = [];
+    let cursor = 0;
+    do {
+      const [next, batch] = await redis.scan(cursor, { match: pattern, count: 100 });
+      cursor = Number(next);
+      keys.push(...batch);
+    } while (cursor !== 0);
+    return keys;
+  }
+  if (!fs.existsSync(DATA_DIR)) return [];
+  const re = new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+  return fs.readdirSync(DATA_DIR)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => f.replace(/\.json$/, ""))
+    .filter((k) => re.test(k));
 }
 
 /** Test/debug helper: which backend is active? */

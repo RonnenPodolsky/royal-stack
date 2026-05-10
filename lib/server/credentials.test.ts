@@ -80,12 +80,12 @@ describe("credentials store", () => {
 
   it("never persists plaintext password to disk", async () => {
     await creds.registerCredentials("secret@example.com", "supersecret-password-XYZ");
-    // Wait for debounced persist
-    await new Promise((r) => setTimeout(r, 700));
-    const filepath = path.join(TMP_ROOT, ".data", "credentials.json");
-    const raw = fs.readFileSync(filepath, "utf-8");
+    // Per-credential file written under .data; find the cred file.
+    const dataDir = path.join(TMP_ROOT, ".data");
+    const files = fs.readdirSync(dataDir).filter((f) => f.startsWith("cred:"));
+    expect(files.length).toBe(1);
+    const raw = fs.readFileSync(path.join(dataDir, files[0]), "utf-8");
     expect(raw).not.toContain("supersecret-password-XYZ");
-    // bcrypt hashes start with $2 (e.g. $2a$, $2b$, $2y$)
     expect(raw).toMatch(/\$2[aby]\$/);
   });
 
@@ -95,10 +95,7 @@ describe("credentials store", () => {
     if (!r1.ok) return;
     const userIdBefore = r1.userId;
 
-    // Wait for the write to flush
-    await new Promise((r) => setTimeout(r, 700));
-
-    // Simulate restart
+    // Simulate restart — saves are awaited (no debounce), so no wait needed.
     vi.resetModules();
     const creds2 = await import("./credentials");
 

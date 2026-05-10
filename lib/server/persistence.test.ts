@@ -8,7 +8,7 @@ const ORIGINAL_CWD = process.cwd();
 
 beforeEach(() => {
   process.chdir(TMP_ROOT);
-  // Re-import the module under each test's cwd so DATA_DIR resolves fresh.
+  fs.rmSync(path.join(TMP_ROOT, ".data"), { recursive: true, force: true });
   vi.resetModules();
 });
 
@@ -18,9 +18,9 @@ afterAll(() => {
 });
 
 describe("persistence", () => {
-  it("loadJSON returns fallback when file missing", async () => {
+  it("loadJSON returns fallback when key missing", async () => {
     const { loadJSON } = await import("./persistence");
-    expect(await loadJSON("missing.json", { hello: "world" })).toEqual({ hello: "world" });
+    expect(await loadJSON("missing", { hello: "world" })).toEqual({ hello: "world" });
   });
 
   it("loadJSON returns fallback on corrupt file", async () => {
@@ -28,42 +28,44 @@ describe("persistence", () => {
     fs.mkdirSync(dataDir, { recursive: true });
     fs.writeFileSync(path.join(dataDir, "corrupt.json"), "{not json", "utf-8");
     const { loadJSON } = await import("./persistence");
-    expect(await loadJSON("corrupt.json", { ok: true })).toEqual({ ok: true });
+    expect(await loadJSON("corrupt", { ok: true })).toEqual({ ok: true });
   });
 
-  it("scheduleSave debounces and writes atomically", async () => {
-    const { scheduleSave, loadJSON } = await import("./persistence");
-    let snapshot = { count: 1 };
-    scheduleSave("counter.json", () => snapshot);
-    snapshot = { count: 2 };
-    scheduleSave("counter.json", () => snapshot);
-    snapshot = { count: 3 };
-    scheduleSave("counter.json", () => snapshot);
-
-    // Wait for debounce + write
-    await new Promise((r) => setTimeout(r, 700));
-
-    const result = await loadJSON<{ count: number }>("counter.json", { count: -1 });
-    expect(result).toEqual({ count: 3 });
-
-    // No leftover .tmp files
+  it("saveJSON writes atomically and round-trips", async () => {
+    const { saveJSON, loadJSON } = await import("./persistence");
+    const data = { count: 42, nested: { a: 1, b: [1, 2, 3] } };
+    await saveJSON("counter", data);
     const dataDir = path.join(TMP_ROOT, ".data");
     const files = fs.readdirSync(dataDir);
     expect(files.some((f) => f.endsWith(".tmp"))).toBe(false);
+    expect(await loadJSON<typeof data>("counter", { count: -1, nested: { a: 0, b: [] } })).toEqual(data);
   });
 
-  it("round-trip preserves complex nested data", async () => {
-    const { scheduleSave, loadJSON } = await import("./persistence");
-    type UserShape = { bankroll: number; activeBuyIns: Record<string, number> };
-    const data: { users: Record<string, UserShape> } = {
-      users: {
-        abc123: { bankroll: 5000, activeBuyIns: { "tbl-1": 200 } },
-        xyz789: { bankroll: 0, activeBuyIns: {} },
-      },
-    };
-    scheduleSave("complex.json", () => data);
-    await new Promise((r) => setTimeout(r, 700));
-    const loaded = await loadJSON<typeof data>("complex.json", { users: {} });
-    expect(loaded).toEqual(data);
+  it("deleteJSON removes a saved key", async () => {
+    const { saveJSON, loadJSON, deleteJSON } = await import("./persistence");
+    await saveJSON("temp", { v: 1 });
+    expect(await loadJSON<{ v: number } | null>("temp", null)).toEqual({ v: 1 });
+    await deleteJSON("temp");
+    expect(await loadJSON<{ v: number } | null>("temp", null)).toBeNull();
+  });
+
+  it("listKeys returns saved keys matching a glob", async () => {
+    const { saveJSON, listKeys } = await import("./persistence");
+    await saveJSON("user:abc", { id: "abc" });
+    await saveJSON("user:xyz", { id: "xyz" });
+    await saveJSON("runtime:tbl-1", { x: 1 });
+    const userKeys = await listKeys("user:*");
+    expect(userKeys.sort()).toEqual(["user:abc", "user:xyz"]);
+  });
+
+  it("a stale-write to one key does not clobber another", async () => {
+    // The core property the per-key refactor guarantees: writing user A
+    // never touches user B.
+    const { saveJSON, loadJSON } = await import("./persistence");
+    await saveJSON("user:A", { bankroll: 10000 });
+    await saveJSON("user:B", { bankroll: 10000 });
+    await saveJSON("user:A", { bankroll: 15000 });
+    expect(await loadJSON("user:A", null)).toEqual({ bankroll: 15000 });
+    expect(await loadJSON("user:B", null)).toEqual({ bankroll: 10000 });
   });
 });

@@ -9,27 +9,20 @@ type CredRecord = {
   createdAt: number;
 };
 
-const CREDS_FILE = "credentials.json";
-
-const creds = new Map<string, CredRecord>();
-let loadPromise: Promise<void> | null = null;
-
-function ensureLoaded(): Promise<void> {
-  if (!loadPromise) {
-    loadPromise = (async () => {
-      const initial = await loadJSON<Record<string, CredRecord>>(CREDS_FILE, {});
-      for (const [k, v] of Object.entries(initial)) creds.set(k, v);
-    })();
-  }
-  return loadPromise;
-}
-
-async function persist(): Promise<void> {
-  await saveJSON(CREDS_FILE, Object.fromEntries(creds.entries()));
-}
-
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function credKey(email: string): string {
+  return `cred:${normalizeEmail(email)}`;
+}
+
+async function loadCred(email: string): Promise<CredRecord | null> {
+  return loadJSON<CredRecord | null>(credKey(email), null);
+}
+
+async function saveCred(record: CredRecord): Promise<void> {
+  await saveJSON(credKey(record.email), record);
 }
 
 export type RegisterResult =
@@ -41,7 +34,6 @@ export async function registerCredentials(
   password: string,
   displayName?: string,
 ): Promise<RegisterResult> {
-  await ensureLoaded();
   const email = normalizeEmail(rawEmail);
   if (!email.includes("@") || email.length < 3) {
     return { ok: false, error: "Invalid email" };
@@ -49,7 +41,7 @@ export async function registerCredentials(
   if (password.length < 8) {
     return { ok: false, error: "Password must be at least 8 characters" };
   }
-  if (creds.has(email)) {
+  if (await loadCred(email)) {
     return { ok: false, error: "Email already registered" };
   }
   const passwordHash = await bcrypt.hash(password, 10);
@@ -64,8 +56,7 @@ export async function registerCredentials(
     userId: user.id,
     createdAt: Date.now(),
   };
-  creds.set(email, record);
-  await persist();
+  await saveCred(record);
   return { ok: true, userId: user.id };
 }
 
@@ -75,9 +66,8 @@ export async function verifyCredentials(
   rawEmail: string,
   password: string,
 ): Promise<VerifiedUser | null> {
-  await ensureLoaded();
   const email = normalizeEmail(rawEmail);
-  const record = creds.get(email);
+  const record = await loadCred(email);
   if (!record) return null;
   const ok = await bcrypt.compare(password, record.passwordHash);
   if (!ok) return null;

@@ -10,36 +10,34 @@ export type UserRecord = {
   netProfit: number;
   lastClaimAt: number | null;
   createdAt: number;
-  // Tracks chips currently committed to live tables. Survives restart so that
-  // re-joining a table after a server bounce does not re-debit the buy-in.
   activeBuyIns?: Record<string, number>;
   avatarUrl?: string;
   email?: string;
 };
 
 const STARTING_BANKROLL = 10_000;
-const USERS_FILE = "users.json";
 
-const users = new Map<string, UserRecord>();
-let loadPromise: Promise<void> | null = null;
-
-function ensureLoaded(): Promise<void> {
-  if (!loadPromise) {
-    loadPromise = (async () => {
-      const initial = await loadJSON<Record<string, UserRecord>>(USERS_FILE, {});
-      for (const [k, v] of Object.entries(initial)) users.set(k, v);
-    })();
-  }
-  return loadPromise;
+function userKey(id: string): string {
+  return `user:${id}`;
 }
 
-async function persist(): Promise<void> {
-  await saveJSON(USERS_FILE, Object.fromEntries(users.entries()));
+async function loadUser(id: string): Promise<UserRecord | null> {
+  return loadJSON<UserRecord | null>(userKey(id), null);
+}
+
+async function saveUser(record: UserRecord): Promise<void> {
+  await saveJSON(userKey(record.id), record);
+}
+
+export async function getUser(id: string): Promise<UserRecord | undefined> {
+  return (await loadUser(id)) ?? undefined;
 }
 
 export async function getOrCreateUser(id: string | null): Promise<UserRecord> {
-  await ensureLoaded();
-  if (id && users.has(id)) return users.get(id)!;
+  if (id) {
+    const existing = await loadUser(id);
+    if (existing) return existing;
+  }
   const newId = id ?? randomBytes(12).toString("hex");
   const user: UserRecord = {
     id: newId,
@@ -51,52 +49,42 @@ export async function getOrCreateUser(id: string | null): Promise<UserRecord> {
     lastClaimAt: null,
     createdAt: Date.now(),
   };
-  users.set(newId, user);
-  await persist();
+  await saveUser(user);
   return user;
 }
 
-export async function getUser(id: string): Promise<UserRecord | undefined> {
-  await ensureLoaded();
-  return users.get(id);
-}
-
 export async function debitBankroll(id: string, amount: number): Promise<boolean> {
-  await ensureLoaded();
-  const u = users.get(id);
+  const u = await loadUser(id);
   if (!u || u.bankroll < amount) return false;
   u.bankroll -= amount;
-  await persist();
+  await saveUser(u);
   return true;
 }
 
 export async function creditBankroll(id: string, amount: number): Promise<void> {
-  await ensureLoaded();
-  const u = users.get(id);
+  const u = await loadUser(id);
   if (!u) return;
   u.bankroll += amount;
-  await persist();
+  await saveUser(u);
 }
 
 export async function recordHandStats(
   id: string,
   args: { potParticipated: number; netDelta: number },
 ): Promise<void> {
-  await ensureLoaded();
-  const u = users.get(id);
+  const u = await loadUser(id);
   if (!u) return;
   u.handsPlayed += 1;
   u.netProfit += args.netDelta;
   if (args.potParticipated > u.biggestPot) u.biggestPot = args.potParticipated;
-  await persist();
+  await saveUser(u);
 }
 
 export async function updateUserProfile(
   id: string,
   updates: { displayName?: string; avatarUrl?: string; email?: string },
 ): Promise<void> {
-  await ensureLoaded();
-  const u = users.get(id);
+  const u = await loadUser(id);
   if (!u) return;
   let changed = false;
   if (updates.displayName && updates.displayName !== u.displayName) {
@@ -111,34 +99,31 @@ export async function updateUserProfile(
     u.email = updates.email;
     changed = true;
   }
-  if (changed) await persist();
+  if (changed) await saveUser(u);
 }
 
 export async function getTableBuyIn(userId: string, tableId: string): Promise<number | undefined> {
-  await ensureLoaded();
-  return users.get(userId)?.activeBuyIns?.[tableId];
+  const u = await loadUser(userId);
+  return u?.activeBuyIns?.[tableId];
 }
 
 export async function recordTableBuyIn(userId: string, tableId: string, amount: number): Promise<void> {
-  await ensureLoaded();
-  const u = users.get(userId);
+  const u = await loadUser(userId);
   if (!u) return;
   if (!u.activeBuyIns) u.activeBuyIns = {};
   u.activeBuyIns[tableId] = amount;
-  await persist();
+  await saveUser(u);
 }
 
 export async function clearTableBuyIn(userId: string, tableId: string): Promise<void> {
-  await ensureLoaded();
-  const u = users.get(userId);
+  const u = await loadUser(userId);
   if (!u || !u.activeBuyIns) return;
   delete u.activeBuyIns[tableId];
-  await persist();
+  await saveUser(u);
 }
 
 export async function claimDailyChips(id: string, amount: number): Promise<{ success: boolean; nextClaimAt?: number }> {
-  await ensureLoaded();
-  const u = users.get(id);
+  const u = await loadUser(id);
   if (!u) return { success: false };
   const now = Date.now();
   const cooldown = 1000 * 60 * 60 * 24;
@@ -147,6 +132,6 @@ export async function claimDailyChips(id: string, amount: number): Promise<{ suc
   }
   u.bankroll += amount;
   u.lastClaimAt = now;
-  await persist();
+  await saveUser(u);
   return { success: true };
 }

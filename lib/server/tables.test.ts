@@ -138,9 +138,8 @@ describe("tables runtime — security", () => {
     expect(await usersMod.getTableBuyIn(userA, "shadow-hold")).toBeDefined();
 
     // Step 2: simulate restart — re-import tables module (wipes runtimes),
-    // but users persist (kept the same userA id).
-    // Wait for any pending persistence writes to flush before re-import.
-    await new Promise((r) => setTimeout(r, 700));
+    // but users persist (kept the same userA id). Saves are awaited so no
+    // wait is needed.
     vi.resetModules();
     const tables2 = await import("./tables");
     const usersMod2 = await import("./users");
