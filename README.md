@@ -77,4 +77,28 @@ lib/
   format.ts       Currency formatter
 proxy.ts          Cookie-setting middleware (Next 16 calls this "proxy")
 .data/            Persisted JSON (auto-created; gitignored)
+vercel.json       Vercel deploy config
 ```
+
+## Deploying
+
+### Important: persistence on serverless
+The default JSON-file persistence in `.data/` works for local dev and for any host with persistent disk (Railway, Render, Fly.io, plain VPS). **It does not work on Vercel** — Vercel functions have a read-only filesystem; every cold start wipes user state.
+
+For Vercel deploy you need a network-backed store. Two clean options, both pure-network with free tiers:
+
+1. **Vercel KV** — first-party. In the Vercel dashboard: Storage → Create → KV. Linking it to your project auto-injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Add `@vercel/kv` to deps and swap `lib/server/persistence.ts` to use `kv.get/kv.set` instead of `fs`.
+2. **Upstash Redis** — works on any host. Sign up at upstash.com, create a Redis DB, copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. Add `@upstash/redis` to deps. Same swap pattern.
+
+The persistence layer (`lib/server/persistence.ts`) is intentionally small (~30 lines) so swapping the storage backend is a focused change.
+
+### Vercel deploy steps
+1. Push this repo to GitHub.
+2. In the Vercel dashboard, click "Add New… → Project" and import the repo.
+3. (Optional but recommended) provision Vercel KV from Storage → Create.
+4. Set the framework to Next.js (auto-detected) and deploy.
+
+If you use the Vercel CLI: `npm i -g vercel && vercel` from this directory.
+
+### Other hosts
+Railway / Render / Fly.io / VPS: the file-based persistence works as-is. Just ensure the deploy mounts a persistent volume at the project root so `.data/` survives restarts.
