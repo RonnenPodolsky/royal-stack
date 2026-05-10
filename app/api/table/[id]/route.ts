@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrCreateSessionUser, isAuthenticated } from "@/lib/server/session";
-import { getMySeatIdx, getPublicState, joinTable } from "@/lib/server/tables";
+import { getMySeatIdx, getPublicState, joinTable, tickTable } from "@/lib/server/tables";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -14,6 +14,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
+
+  // Advance one bot action / hand transition per poll — this gives the
+  // game its visible pacing (one event per ~1.2s polling interval).
+  await tickTable({ tableId: id, userId: user.id });
 
   const state = await getPublicState({ tableId: id, userId: user.id });
   const seatIdx = await getMySeatIdx({ tableId: id, userId: user.id });

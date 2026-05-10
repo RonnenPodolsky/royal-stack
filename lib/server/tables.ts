@@ -108,45 +108,51 @@ export async function joinTable(args: { tableId: string; userId: string }): Prom
     startOfHandUserStack: userSeat.stack + userSeat.contributed,
     buyIn,
   };
-  runAutoTurns(runtime);
+  // Do NOT auto-run bots here. tickTable advances one bot action per poll,
+  // so the user sees the betting round play out with visible pacing.
   await commitRuntime(args.tableId, runtime);
   return { runtime };
 }
 
-function runAutoTurns(runtime: Runtime): void {
-  // Run bot actions while it's a bot's turn and the hand is in progress.
-  // Bound iterations to avoid runaway loops.
-  let iterations = 0;
-  while (iterations++ < 200) {
-    const s = runtime.state;
-    if (s.street === "ended") {
-      onHandEnded(runtime);
-      // Auto-start next hand if user still has chips and at least one bot has chips
-      const userSeat = s.seats[runtime.userSeatIdx];
-      const otherWithChips = s.seats.some((seat, i) => i !== runtime.userSeatIdx && seat.stack > 0);
-      if (userSeat.stack > 0 && otherWithChips) {
-        runtime.state = startHand(s);
-        runtime.startOfHandUserStack =
-          runtime.state.seats[runtime.userSeatIdx].stack +
-          runtime.state.seats[runtime.userSeatIdx].contributed;
-        continue;
-      }
-      return;
+/**
+ * Advance the table by ONE step: a single bot action, or roll over to the
+ * next hand if the current one ended. Called from the polling GET endpoint
+ * so each tick (default 1.2s) shows one event. The user's own turn is a
+ * no-op (we wait for their explicit action).
+ */
+export async function tickTable(args: { tableId: string; userId: string }): Promise<void> {
+  const runtime = await loadRuntime(args.tableId);
+  if (!runtime || runtime.userId !== args.userId) return;
+  const s = runtime.state;
+
+  if (s.street === "ended") {
+    onHandEnded(runtime);
+    const userSeat = s.seats[runtime.userSeatIdx];
+    const otherWithChips = s.seats.some((seat, i) => i !== runtime.userSeatIdx && seat.stack > 0);
+    if (userSeat.stack > 0 && otherWithChips) {
+      runtime.state = startHand(s);
+      runtime.startOfHandUserStack =
+        runtime.state.seats[runtime.userSeatIdx].stack +
+        runtime.state.seats[runtime.userSeatIdx].contributed;
+      await commitRuntime(args.tableId, runtime);
     }
-    if (s.toActIdx === runtime.userSeatIdx) return; // wait for user
-    if (s.toActIdx < 0) return;
-    const action = botAction(s, s.toActIdx);
-    try {
-      runtime.state = applyAction(s, s.toActIdx, action);
-    } catch (e) {
-      if (e instanceof IllegalActionError) {
-        // Bot picked illegal action — fold as fallback so the hand can progress.
-        runtime.state = applyAction(s, s.toActIdx, { type: "fold" });
-      } else {
-        throw e;
-      }
+    return;
+  }
+
+  if (s.toActIdx === runtime.userSeatIdx) return; // user's turn — wait
+  if (s.toActIdx < 0) return;
+
+  const action = botAction(s, s.toActIdx);
+  try {
+    runtime.state = applyAction(s, s.toActIdx, action);
+  } catch (e) {
+    if (e instanceof IllegalActionError) {
+      runtime.state = applyAction(s, s.toActIdx, { type: "fold" });
+    } else {
+      throw e;
     }
   }
+  await commitRuntime(args.tableId, runtime);
 }
 
 function onHandEnded(runtime: Runtime): void {
@@ -182,7 +188,8 @@ export async function actAtTable(args: {
     if (e instanceof IllegalActionError) return { ok: false, error: e.message };
     throw e;
   }
-  runAutoTurns(runtime);
+  // Do not chain bot actions here; tickTable handles them one per poll
+  // so the client can render each move with a visible delay.
   await commitRuntime(args.tableId, runtime);
   return { ok: true };
 }
