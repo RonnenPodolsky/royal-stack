@@ -13,9 +13,11 @@ const COOKIE_NAME = "rs_uid";
 export async function getOrCreateSessionUser(): Promise<UserRecord> {
   const session = await auth();
   if (session?.user?.id) {
-    const u = await getUser(session.user.id);
-    if (u) return u;
-    // Fallthrough: stale token referencing a deleted user → fall back to anon cookie
+    // Always create-or-fetch by NextAuth id. Never fall back to anon cookie
+    // when authed, otherwise a missed persist (debounce, function teardown)
+    // can momentarily mask the real user, and subsequent calls that use the
+    // JWT id directly would see a different identity.
+    return getOrCreateUser(session.user.id);
   }
   const jar = await cookies();
   const existing = jar.get(COOKIE_NAME)?.value ?? null;

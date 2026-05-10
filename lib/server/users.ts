@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { loadJSON, scheduleSave } from "./persistence";
+import { loadJSON, saveJSON } from "./persistence";
 
 export type UserRecord = {
   id: string;
@@ -33,8 +33,8 @@ function ensureLoaded(): Promise<void> {
   return loadPromise;
 }
 
-function persist(): void {
-  scheduleSave(USERS_FILE, () => Object.fromEntries(users.entries()));
+async function persist(): Promise<void> {
+  await saveJSON(USERS_FILE, Object.fromEntries(users.entries()));
 }
 
 export async function getOrCreateUser(id: string | null): Promise<UserRecord> {
@@ -52,7 +52,7 @@ export async function getOrCreateUser(id: string | null): Promise<UserRecord> {
     createdAt: Date.now(),
   };
   users.set(newId, user);
-  persist();
+  await persist();
   return user;
 }
 
@@ -66,7 +66,7 @@ export async function debitBankroll(id: string, amount: number): Promise<boolean
   const u = users.get(id);
   if (!u || u.bankroll < amount) return false;
   u.bankroll -= amount;
-  persist();
+  await persist();
   return true;
 }
 
@@ -75,7 +75,7 @@ export async function creditBankroll(id: string, amount: number): Promise<void> 
   const u = users.get(id);
   if (!u) return;
   u.bankroll += amount;
-  persist();
+  await persist();
 }
 
 export async function recordHandStats(
@@ -88,7 +88,7 @@ export async function recordHandStats(
   u.handsPlayed += 1;
   u.netProfit += args.netDelta;
   if (args.potParticipated > u.biggestPot) u.biggestPot = args.potParticipated;
-  persist();
+  await persist();
 }
 
 export async function updateUserProfile(
@@ -111,7 +111,7 @@ export async function updateUserProfile(
     u.email = updates.email;
     changed = true;
   }
-  if (changed) persist();
+  if (changed) await persist();
 }
 
 export async function getTableBuyIn(userId: string, tableId: string): Promise<number | undefined> {
@@ -125,7 +125,7 @@ export async function recordTableBuyIn(userId: string, tableId: string, amount: 
   if (!u) return;
   if (!u.activeBuyIns) u.activeBuyIns = {};
   u.activeBuyIns[tableId] = amount;
-  persist();
+  await persist();
 }
 
 export async function clearTableBuyIn(userId: string, tableId: string): Promise<void> {
@@ -133,7 +133,7 @@ export async function clearTableBuyIn(userId: string, tableId: string): Promise<
   const u = users.get(userId);
   if (!u || !u.activeBuyIns) return;
   delete u.activeBuyIns[tableId];
-  persist();
+  await persist();
 }
 
 export async function claimDailyChips(id: string, amount: number): Promise<{ success: boolean; nextClaimAt?: number }> {
@@ -147,6 +147,6 @@ export async function claimDailyChips(id: string, amount: number): Promise<{ suc
   }
   u.bankroll += amount;
   u.lastClaimAt = now;
-  persist();
+  await persist();
   return { success: true };
 }

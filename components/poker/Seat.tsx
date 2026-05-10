@@ -69,6 +69,9 @@ function CardBacks({ count }: { count: number }) {
   );
 }
 
+// Seat 0 is always the local user at the bottom. Subsequent indices move
+// CLOCKWISE around the table when viewed from above — matching standard
+// poker action order (D → SB → BB) which is also clockwise.
 export function pileLayout(total: number): Array<{ left: string; top: string }> {
   if (total === 2) {
     return [
@@ -79,39 +82,41 @@ export function pileLayout(total: number): Array<{ left: string; top: string }> 
   if (total === 3) {
     return [
       { left: "50%", top: "85%" },
-      { left: "85%", top: "20%" },
       { left: "15%", top: "20%" },
+      { left: "85%", top: "20%" },
     ];
   }
   if (total === 4) {
     return [
       { left: "50%", top: "85%" },
-      { left: "92%", top: "45%" },
-      { left: "50%", top: "10%" },
       { left: "8%", top: "45%" },
+      { left: "50%", top: "10%" },
+      { left: "92%", top: "45%" },
     ];
   }
   if (total === 5) {
     return [
       { left: "50%", top: "85%" },
-      { left: "90%", top: "50%" },
-      { left: "75%", top: "12%" },
-      { left: "25%", top: "12%" },
       { left: "10%", top: "50%" },
+      { left: "25%", top: "12%" },
+      { left: "75%", top: "12%" },
+      { left: "90%", top: "50%" },
     ];
   }
   if (total === 6) {
     return [
       { left: "50%", top: "85%" },
-      { left: "90%", top: "55%" },
-      { left: "85%", top: "12%" },
-      { left: "50%", top: "5%" },
-      { left: "15%", top: "12%" },
       { left: "10%", top: "55%" },
+      { left: "15%", top: "12%" },
+      { left: "50%", top: "5%" },
+      { left: "85%", top: "12%" },
+      { left: "90%", top: "55%" },
     ];
   }
   return Array.from({ length: total }, (_, i) => {
-    const angle = (2 * Math.PI * i) / total - Math.PI / 2;
+    // Start at bottom (π/2 in math coords). Y is screen-inverted, so adding
+    // to the angle moves visually clockwise: bottom → left → top → right.
+    const angle = Math.PI / 2 + (2 * Math.PI * i) / total;
     return {
       left: `${50 + 40 * Math.cos(angle)}%`,
       top: `${50 + 40 * Math.sin(angle)}%`,

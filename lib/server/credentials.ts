@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { loadJSON, scheduleSave } from "./persistence";
+import { loadJSON, saveJSON } from "./persistence";
 import { getOrCreateUser, getUser, updateUserProfile } from "./users";
 
 type CredRecord = {
@@ -24,8 +24,8 @@ function ensureLoaded(): Promise<void> {
   return loadPromise;
 }
 
-function persist(): void {
-  scheduleSave(CREDS_FILE, () => Object.fromEntries(creds.entries()));
+async function persist(): Promise<void> {
+  await saveJSON(CREDS_FILE, Object.fromEntries(creds.entries()));
 }
 
 function normalizeEmail(email: string): string {
@@ -65,7 +65,7 @@ export async function registerCredentials(
     createdAt: Date.now(),
   };
   creds.set(email, record);
-  persist();
+  await persist();
   return { ok: true, userId: user.id };
 }
 
