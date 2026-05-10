@@ -15,6 +15,8 @@ export default async function CashierPage() {
       <TopBar
         bankroll={user.bankroll}
         username={user.displayName}
+        email={user.email}
+        avatarUrl={user.avatarUrl}
         active="cashier"
         balanceTone="secondary"
       />

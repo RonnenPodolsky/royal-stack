@@ -16,7 +16,13 @@ export default async function ProfilePage() {
   const hands = user.handsPlayed || 142;
   return (
     <>
-      <TopBar bankroll={user.bankroll} username={user.displayName} active="profile" />
+      <TopBar
+        bankroll={user.bankroll}
+        username={user.displayName}
+        email={user.email}
+        avatarUrl={user.avatarUrl}
+        active="profile"
+      />
       <SideNav active="profile" />
       <BottomNav active="stats" />
       <main className="lg:pl-64 pt-20 pb-24 md:pb-8 px-margin-mobile md:px-margin-desktop max-w-[1440px] mx-auto">

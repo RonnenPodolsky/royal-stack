@@ -13,6 +13,8 @@ export type UserRecord = {
   // Tracks chips currently committed to live tables. Survives restart so that
   // re-joining a table after a server bounce does not re-debit the buy-in.
   activeBuyIns?: Record<string, number>;
+  avatarUrl?: string;
+  email?: string;
 };
 
 const STARTING_BANKROLL = 10_000;
@@ -87,6 +89,29 @@ export async function recordHandStats(
   u.netProfit += args.netDelta;
   if (args.potParticipated > u.biggestPot) u.biggestPot = args.potParticipated;
   persist();
+}
+
+export async function updateUserProfile(
+  id: string,
+  updates: { displayName?: string; avatarUrl?: string; email?: string },
+): Promise<void> {
+  await ensureLoaded();
+  const u = users.get(id);
+  if (!u) return;
+  let changed = false;
+  if (updates.displayName && updates.displayName !== u.displayName) {
+    u.displayName = updates.displayName;
+    changed = true;
+  }
+  if (updates.avatarUrl && updates.avatarUrl !== u.avatarUrl) {
+    u.avatarUrl = updates.avatarUrl;
+    changed = true;
+  }
+  if (updates.email && updates.email !== u.email) {
+    u.email = updates.email;
+    changed = true;
+  }
+  if (changed) persist();
 }
 
 export async function getTableBuyIn(userId: string, tableId: string): Promise<number | undefined> {

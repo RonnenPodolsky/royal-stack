@@ -15,8 +15,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
-  const state = getPublicState({ tableId: id, userId: user.id });
-  const seatIdx = getMySeatIdx({ tableId: id, userId: user.id });
+  const state = await getPublicState({ tableId: id, userId: user.id });
+  const seatIdx = await getMySeatIdx({ tableId: id, userId: user.id });
   if (!state || seatIdx === null) {
     return NextResponse.json({ error: "Could not load table" }, { status: 500 });
   }

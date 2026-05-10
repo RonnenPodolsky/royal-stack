@@ -48,7 +48,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const result = await actAtTable({ tableId: id, userId, action });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 
-  const state = getPublicState({ tableId: id, userId });
-  const seatIdx = getMySeatIdx({ tableId: id, userId });
+  const state = await getPublicState({ tableId: id, userId });
+  const seatIdx = await getMySeatIdx({ tableId: id, userId });
   return NextResponse.json({ state, mySeatIdx: seatIdx });
 }

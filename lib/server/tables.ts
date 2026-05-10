@@ -11,6 +11,7 @@ import {
   recordHandStats,
   recordTableBuyIn,
 } from "./users";
+import { deleteJSON, loadJSON, saveJSON } from "./persistence";
 
 const BOT_NAMES = [
   "Dr. Kraken",
@@ -31,21 +32,24 @@ type Runtime = {
   buyIn: number;
 };
 
-const runtimes = new Map<string, Runtime>();
-const locks = new Map<string, Promise<unknown>>();
+function runtimeKey(tableId: string): string {
+  return `runtime:${tableId}`;
+}
 
-async function withLock<T>(key: string, fn: () => Promise<T> | T): Promise<T> {
-  const prev = locks.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const next = new Promise<void>((r) => (release = r));
-  locks.set(key, prev.then(() => next));
-  try {
-    await prev;
-    return await fn();
-  } finally {
-    release();
-    if (locks.get(key) === next) locks.delete(key);
-  }
+async function loadRuntime(tableId: string): Promise<Runtime | null> {
+  return loadJSON<Runtime | null>(runtimeKey(tableId), null);
+}
+
+// 1 hour TTL — abandoned tables auto-free for re-use. Every action refreshes
+// the TTL so active games never expire mid-play.
+const RUNTIME_TTL_SECONDS = 3600;
+
+async function commitRuntime(tableId: string, runtime: Runtime): Promise<void> {
+  await saveJSON(runtimeKey(tableId), runtime, { ttlSeconds: RUNTIME_TTL_SECONDS });
+}
+
+async function deleteRuntime(tableId: string): Promise<void> {
+  await deleteJSON(runtimeKey(tableId));
 }
 
 function botSeed(tableId: string, idx: number): string {
@@ -58,56 +62,55 @@ export async function joinTable(args: { tableId: string; userId: string }): Prom
   const user = await getUser(args.userId);
   if (!user) return { error: "User not found" };
 
-  return withLock(args.tableId, async () => {
-    let runtime = runtimes.get(args.tableId);
-    if (runtime && runtime.userId === args.userId) {
-      // Already seated
-      return { runtime };
-    }
-    if (runtime && runtime.userId !== args.userId) {
-      return { error: "Table occupied. Phase 1 supports one human per table." };
-    }
-    // If the user already has a buy-in committed to this table (e.g. server
-    // restarted mid-session), reuse it instead of debiting the bankroll twice.
-    const persistedBuyIn = await getTableBuyIn(args.userId, args.tableId);
-    let buyIn: number;
-    if (persistedBuyIn !== undefined) {
-      buyIn = persistedBuyIn;
-    } else {
-      buyIn = spec.minBuyIn;
-      if (user.bankroll < buyIn) {
-        return { error: `Need at least ${buyIn} chips to buy in` };
-      }
-      if (!(await debitBankroll(args.userId, buyIn))) {
-        return { error: "Insufficient bankroll" };
-      }
-      await recordTableBuyIn(args.userId, args.tableId, buyIn);
-    }
-
-    let s = createTable({ tableId: spec.id, smallBlind: spec.smallBlind, bigBlind: spec.bigBlind });
-    s = addPlayer(s, { id: args.userId, displayName: user.displayName, isBot: false, buyIn });
-    const userSeatIdx = s.seats.length - 1;
-    for (let i = 0; i < spec.seats - 1; i++) {
-      s = addPlayer(s, {
-        id: botSeed(spec.id, i),
-        displayName: BOT_NAMES[i % BOT_NAMES.length],
-        isBot: true,
-        buyIn,
-      });
-    }
-    s = startHand(s);
-    const userSeat = s.seats[userSeatIdx];
-    runtime = {
-      state: s,
-      userId: args.userId,
-      userSeatIdx,
-      startOfHandUserStack: userSeat.stack + userSeat.contributed,
-      buyIn,
-    };
-    runtimes.set(args.tableId, runtime);
-    runAutoTurns(runtime);
+  let runtime = await loadRuntime(args.tableId);
+  if (runtime && runtime.userId === args.userId) {
+    // Already seated — refresh nothing, return as-is.
     return { runtime };
-  });
+  }
+  if (runtime && runtime.userId !== args.userId) {
+    return { error: "Table occupied. Phase 1 supports one human per table." };
+  }
+
+  // If the user already has a buy-in committed to this table (e.g. server
+  // restarted mid-session), reuse it instead of debiting the bankroll twice.
+  const persistedBuyIn = await getTableBuyIn(args.userId, args.tableId);
+  let buyIn: number;
+  if (persistedBuyIn !== undefined) {
+    buyIn = persistedBuyIn;
+  } else {
+    buyIn = spec.minBuyIn;
+    if (user.bankroll < buyIn) {
+      return { error: `Need at least ${buyIn} chips to buy in` };
+    }
+    if (!(await debitBankroll(args.userId, buyIn))) {
+      return { error: "Insufficient bankroll" };
+    }
+    await recordTableBuyIn(args.userId, args.tableId, buyIn);
+  }
+
+  let s = createTable({ tableId: spec.id, smallBlind: spec.smallBlind, bigBlind: spec.bigBlind });
+  s = addPlayer(s, { id: args.userId, displayName: user.displayName, isBot: false, buyIn });
+  const userSeatIdx = s.seats.length - 1;
+  for (let i = 0; i < spec.seats - 1; i++) {
+    s = addPlayer(s, {
+      id: botSeed(spec.id, i),
+      displayName: BOT_NAMES[i % BOT_NAMES.length],
+      isBot: true,
+      buyIn,
+    });
+  }
+  s = startHand(s);
+  const userSeat = s.seats[userSeatIdx];
+  runtime = {
+    state: s,
+    userId: args.userId,
+    userSeatIdx,
+    startOfHandUserStack: userSeat.stack + userSeat.contributed,
+    buyIn,
+  };
+  runAutoTurns(runtime);
+  await commitRuntime(args.tableId, runtime);
+  return { runtime };
 }
 
 function runAutoTurns(runtime: Runtime): void {
@@ -167,44 +170,41 @@ export async function actAtTable(args: {
   userId: string;
   action: Action;
 }): Promise<ActResult> {
-  return withLock(args.tableId, () => {
-    const runtime = runtimes.get(args.tableId);
-    if (!runtime) return { ok: false, error: "Not seated at this table" };
-    if (runtime.userId !== args.userId) return { ok: false, error: "Not your seat" };
-    if (runtime.state.toActIdx !== runtime.userSeatIdx) {
-      return { ok: false, error: "Not your turn" };
-    }
-    try {
-      runtime.state = applyAction(runtime.state, runtime.userSeatIdx, args.action);
-    } catch (e) {
-      if (e instanceof IllegalActionError) return { ok: false, error: e.message };
-      throw e;
-    }
-    runAutoTurns(runtime);
-    return { ok: true };
-  });
+  const runtime = await loadRuntime(args.tableId);
+  if (!runtime) return { ok: false, error: "Not seated at this table" };
+  if (runtime.userId !== args.userId) return { ok: false, error: "Not your seat" };
+  if (runtime.state.toActIdx !== runtime.userSeatIdx) {
+    return { ok: false, error: "Not your turn" };
+  }
+  try {
+    runtime.state = applyAction(runtime.state, runtime.userSeatIdx, args.action);
+  } catch (e) {
+    if (e instanceof IllegalActionError) return { ok: false, error: e.message };
+    throw e;
+  }
+  runAutoTurns(runtime);
+  await commitRuntime(args.tableId, runtime);
+  return { ok: true };
 }
 
 export async function leaveTable(args: { tableId: string; userId: string }): Promise<void> {
-  await withLock(args.tableId, async () => {
-    const runtime = runtimes.get(args.tableId);
-    if (!runtime || runtime.userId !== args.userId) return;
-    const userSeat = runtime.state.seats[runtime.userSeatIdx];
-    const remaining = userSeat.stack + userSeat.contributed;
-    if (remaining > 0) await creditBankroll(args.userId, remaining);
-    await clearTableBuyIn(args.userId, args.tableId);
-    runtimes.delete(args.tableId);
-  });
+  const runtime = await loadRuntime(args.tableId);
+  if (!runtime || runtime.userId !== args.userId) return;
+  const userSeat = runtime.state.seats[runtime.userSeatIdx];
+  const remaining = userSeat.stack + userSeat.contributed;
+  if (remaining > 0) await creditBankroll(args.userId, remaining);
+  await clearTableBuyIn(args.userId, args.tableId);
+  await deleteRuntime(args.tableId);
 }
 
-export function getPublicState(args: { tableId: string; userId: string }): GameState | null {
-  const runtime = runtimes.get(args.tableId);
+export async function getPublicState(args: { tableId: string; userId: string }): Promise<GameState | null> {
+  const runtime = await loadRuntime(args.tableId);
   if (!runtime || runtime.userId !== args.userId) return null;
   return publicView(runtime.state, runtime.userSeatIdx);
 }
 
-export function getMySeatIdx(args: { tableId: string; userId: string }): number | null {
-  const runtime = runtimes.get(args.tableId);
+export async function getMySeatIdx(args: { tableId: string; userId: string }): Promise<number | null> {
+  const runtime = await loadRuntime(args.tableId);
   if (!runtime || runtime.userId !== args.userId) return null;
   return runtime.userSeatIdx;
 }

@@ -5,11 +5,30 @@ import { formatChips } from "@/lib/format";
 type Props = {
   bankroll?: number;
   username?: string;
+  email?: string;
+  avatarUrl?: string;
   active?: "lobby" | "tables" | "tournaments" | "leaderboard" | "profile" | "cashier" | "stats";
   balanceTone?: "primary" | "secondary";
 };
 
-export function TopBar({ bankroll, username, active = "lobby", balanceTone = "primary" }: Props) {
+function pickInitials(username?: string, email?: string): string {
+  if (username) {
+    const parts = username.trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    if (parts.length === 1 && parts[0]) {
+      return parts[0][0].toUpperCase();
+    }
+  }
+  if (email) {
+    const local = email.split("@")[0];
+    if (local) return local[0].toUpperCase();
+  }
+  return "?";
+}
+
+export function TopBar({ bankroll, username, email, avatarUrl, active = "lobby", balanceTone = "primary" }: Props) {
   const linkClass = (key: string) =>
     active === key
       ? "text-primary font-bold"
@@ -17,6 +36,8 @@ export function TopBar({ bankroll, username, active = "lobby", balanceTone = "pr
 
   const balanceColor = balanceTone === "secondary" ? "text-secondary" : "text-primary";
   const balanceIcon = balanceTone === "secondary" ? "text-secondary" : "text-primary";
+
+  const initials = pickInitials(username, email);
 
   return (
     <header className="fixed top-0 w-full z-50 bg-surface border-b border-white/5 shadow-sm">
@@ -54,10 +75,15 @@ export function TopBar({ bankroll, username, active = "lobby", balanceTone = "pr
           </button>
           <Link
             href="/profile"
-            className="w-10 h-10 rounded-full border-2 border-primary bg-primary-container/20 flex items-center justify-center font-bold text-primary"
+            className="w-10 h-10 rounded-full border-2 border-primary bg-primary-container/20 flex items-center justify-center font-bold text-primary overflow-hidden"
             aria-label="Profile"
           >
-            {(username ?? "?").slice(0, 1).toUpperCase()}
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatarUrl} alt={username ?? "Profile"} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              initials
+            )}
           </Link>
         </div>
       </div>

@@ -11,7 +11,13 @@ export default async function LobbyPage() {
   const user = await getOrCreateSessionUser();
   return (
     <>
-      <TopBar bankroll={user.bankroll} username={user.displayName} active="lobby" />
+      <TopBar
+        bankroll={user.bankroll}
+        username={user.displayName}
+        email={user.email}
+        avatarUrl={user.avatarUrl}
+        active="lobby"
+      />
       <SideNav active="lobby" />
       <BottomNav active="lobby" />
       <main className="lg:ml-64 pt-16 pb-24 md:pb-0 min-h-screen">

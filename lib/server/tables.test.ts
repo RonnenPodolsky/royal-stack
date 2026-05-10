@@ -58,16 +58,16 @@ describe("tables runtime — security", () => {
 
   it("getPublicState returns null for a non-seated user", async () => {
     await tables.joinTable({ tableId: "shadow-hold", userId: userA });
-    const state = tables.getPublicState({ tableId: "shadow-hold", userId: userB });
+    const state = await tables.getPublicState({ tableId: "shadow-hold", userId: userB });
     expect(state).toBeNull();
   });
 
   it("getPublicState hides opponent hole cards but reveals own", async () => {
     await tables.joinTable({ tableId: "shadow-hold", userId: userA });
-    const state = tables.getPublicState({ tableId: "shadow-hold", userId: userA });
+    const state = await tables.getPublicState({ tableId: "shadow-hold", userId: userA });
     expect(state).not.toBeNull();
     if (!state) return;
-    const meIdx = tables.getMySeatIdx({ tableId: "shadow-hold", userId: userA });
+    const meIdx = await tables.getMySeatIdx({ tableId: "shadow-hold", userId: userA });
     expect(meIdx).not.toBeNull();
     if (meIdx === null) return;
     expect(state.seats[meIdx].hole).not.toBeNull();
@@ -95,10 +95,10 @@ describe("tables runtime — security", () => {
     // OR force a check on the wrong-user pattern (already covered above).
     // Here we test: act with an action invalid for current state.
     await tables.joinTable({ tableId: "shadow-hold", userId: userA });
-    const state = tables.getPublicState({ tableId: "shadow-hold", userId: userA });
+    const state = await tables.getPublicState({ tableId: "shadow-hold", userId: userA });
     expect(state).not.toBeNull();
     if (!state) return;
-    if (state.toActIdx !== tables.getMySeatIdx({ tableId: "shadow-hold", userId: userA })) {
+    if (state.toActIdx !== (await tables.getMySeatIdx({ tableId: "shadow-hold", userId: userA }))) {
       // Not the user's turn — any action they send must be rejected
       const r = await tables.actAtTable({
         tableId: "shadow-hold",

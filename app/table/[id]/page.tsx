@@ -28,8 +28,8 @@ export default async function TablePage({ params }: { params: Params }) {
       </main>
     );
   }
-  const state = getPublicState({ tableId: id, userId: user.id });
-  const seatIdx = getMySeatIdx({ tableId: id, userId: user.id });
+  const state = await getPublicState({ tableId: id, userId: user.id });
+  const seatIdx = await getMySeatIdx({ tableId: id, userId: user.id });
   if (!state || seatIdx === null) redirect("/lobby");
   return (
     <TableClient
@@ -38,6 +38,8 @@ export default async function TablePage({ params }: { params: Params }) {
       initialMySeatIdx={seatIdx}
       initialBankroll={user.bankroll}
       username={user.displayName}
+      email={user.email}
+      avatarUrl={user.avatarUrl}
     />
   );
 }

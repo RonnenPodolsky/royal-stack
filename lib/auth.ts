@@ -3,7 +3,7 @@ import type { Provider } from "next-auth/providers";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { verifyCredentials } from "@/lib/server/credentials";
-import { getOrCreateUser, getUser } from "@/lib/server/users";
+import { getOrCreateUser, getUser, updateUserProfile } from "@/lib/server/users";
 
 const providers: Provider[] = [
   Credentials({
@@ -52,7 +52,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (account?.provider === "google" && account.providerAccountId) {
         const googleUserKey = `google:${account.providerAccountId}`;
         const record = await getOrCreateUser(googleUserKey);
-        if (user.name) record.displayName = user.name;
+        await updateUserProfile(record.id, {
+          displayName: user.name ?? undefined,
+          email: user.email ?? undefined,
+          avatarUrl: user.image ?? undefined,
+        });
         user.id = record.id;
       }
       return true;

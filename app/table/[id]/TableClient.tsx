@@ -17,9 +17,11 @@ type Props = {
   initialMySeatIdx: number;
   initialBankroll: number;
   username: string;
+  email?: string;
+  avatarUrl?: string;
 };
 
-export function TableClient({ tableId, initialState, initialMySeatIdx, initialBankroll, username }: Props) {
+export function TableClient({ tableId, initialState, initialMySeatIdx, initialBankroll, username, email, avatarUrl }: Props) {
   const [state, setState] = useState<GameState>(initialState);
   const [mySeatIdx, setMySeatIdx] = useState<number>(initialMySeatIdx);
   const [bankroll, setBankroll] = useState<number>(initialBankroll);
@@ -109,7 +111,14 @@ export function TableClient({ tableId, initialState, initialMySeatIdx, initialBa
 
   return (
     <>
-      <TopBar bankroll={bankroll} username={username} active="tables" balanceTone="secondary" />
+      <TopBar
+        bankroll={bankroll}
+        username={username}
+        email={email}
+        avatarUrl={avatarUrl}
+        active="tables"
+        balanceTone="secondary"
+      />
       <main className="relative h-screen w-full flex flex-col items-center justify-start pt-20 pb-44 overflow-hidden">
         <div className="w-full max-w-[1100px] flex-1 relative px-4 mx-auto">
           <div className="poker-table-felt relative w-full aspect-[16/9] rounded-[200px] border-[12px] border-[#2d2016]">

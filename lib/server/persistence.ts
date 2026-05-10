@@ -34,6 +34,41 @@ export async function loadJSON<T>(key: string, fallback: T): Promise<T> {
   }
 }
 
+/**
+ * Immediate (not debounced) save. Use for state that MUST be durable before
+ * the current request returns — e.g. live game state on a serverless platform
+ * where the next request may hit a different function instance.
+ */
+export async function saveJSON(
+  key: string,
+  data: unknown,
+  opts?: { ttlSeconds?: number },
+): Promise<void> {
+  if (redis) {
+    if (opts?.ttlSeconds) {
+      await redis.set(key, data, { ex: opts.ttlSeconds });
+    } else {
+      await redis.set(key, data);
+    }
+    return;
+  }
+  // File backend ignores TTL (used for local dev only).
+  ensureDir();
+  const filepath = path.join(DATA_DIR, key);
+  const tmpPath = `${filepath}.tmp`;
+  await fs.promises.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+  await fs.promises.rename(tmpPath, filepath);
+}
+
+export async function deleteJSON(key: string): Promise<void> {
+  if (redis) {
+    await redis.del(key);
+    return;
+  }
+  const filepath = path.join(DATA_DIR, key);
+  if (fs.existsSync(filepath)) await fs.promises.unlink(filepath);
+}
+
 const pending = new Map<string, NodeJS.Timeout>();
 
 export function scheduleSave(key: string, getData: () => unknown): void {

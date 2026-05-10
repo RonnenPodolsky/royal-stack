@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { loadJSON, scheduleSave } from "./persistence";
-import { getOrCreateUser, getUser } from "./users";
+import { getOrCreateUser, getUser, updateUserProfile } from "./users";
 
 type CredRecord = {
   email: string;
@@ -54,7 +54,10 @@ export async function registerCredentials(
   }
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await getOrCreateUser(null);
-  if (displayName) user.displayName = displayName;
+  await updateUserProfile(user.id, {
+    displayName: displayName?.trim() || undefined,
+    email,
+  });
   const record: CredRecord = {
     email,
     passwordHash,
