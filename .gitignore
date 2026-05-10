@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# persisted runtime data
+/.data/
+
 # production
 /build
 
