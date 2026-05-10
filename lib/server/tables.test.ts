@@ -21,8 +21,8 @@ beforeEach(async () => {
   vi.resetModules();
   tables = await import("./tables");
   usersMod = await import("./users");
-  userA = usersMod.getOrCreateUser(null).id;
-  userB = usersMod.getOrCreateUser(null).id;
+  userA = (await usersMod.getOrCreateUser(null)).id;
+  userB = (await usersMod.getOrCreateUser(null)).id;
 });
 
 afterAll(() => {
@@ -51,7 +51,7 @@ describe("tables runtime — security", () => {
 
   it("rejects join when bankroll is insufficient", async () => {
     // Drain user A's bankroll
-    expect(usersMod.debitBankroll(userA, 10_000)).toBe(true);
+    expect(await usersMod.debitBankroll(userA, 10_000)).toBe(true);
     const result = await tables.joinTable({ tableId: "shadow-hold", userId: userA });
     expect("error" in result).toBe(true);
   });
@@ -118,12 +118,12 @@ describe("tables runtime — security", () => {
   });
 
   it("leaveTable refunds remaining stack to bankroll", async () => {
-    const before = usersMod.getUser(userA)!.bankroll;
+    const before = (await usersMod.getUser(userA))!.bankroll;
     await tables.joinTable({ tableId: "shadow-hold", userId: userA });
-    const afterJoin = usersMod.getUser(userA)!.bankroll;
+    const afterJoin = (await usersMod.getUser(userA))!.bankroll;
     expect(afterJoin).toBeLessThan(before);
     await tables.leaveTable({ tableId: "shadow-hold", userId: userA });
-    const afterLeave = usersMod.getUser(userA)!.bankroll;
+    const afterLeave = (await usersMod.getUser(userA))!.bankroll;
     // After leave, bankroll = pre-join + (any winnings) or pre-join (if no hands settled).
     // At minimum it should be >= afterJoin (refunded the stack).
     expect(afterLeave).toBeGreaterThanOrEqual(afterJoin);
@@ -131,11 +131,11 @@ describe("tables runtime — security", () => {
 
   it("active buy-in survives a simulated server restart (no double debit)", async () => {
     // Step 1: user joins, bankroll debited, activeBuyIn recorded.
-    const before = usersMod.getUser(userA)!.bankroll;
+    const before = (await usersMod.getUser(userA))!.bankroll;
     await tables.joinTable({ tableId: "shadow-hold", userId: userA });
-    const afterFirstJoin = usersMod.getUser(userA)!.bankroll;
+    const afterFirstJoin = (await usersMod.getUser(userA))!.bankroll;
     expect(afterFirstJoin).toBeLessThan(before);
-    expect(usersMod.getTableBuyIn(userA, "shadow-hold")).toBeDefined();
+    expect(await usersMod.getTableBuyIn(userA, "shadow-hold")).toBeDefined();
 
     // Step 2: simulate restart — re-import tables module (wipes runtimes),
     // but users persist (kept the same userA id).
@@ -144,12 +144,12 @@ describe("tables runtime — security", () => {
     vi.resetModules();
     const tables2 = await import("./tables");
     const usersMod2 = await import("./users");
-    const bankrollAfterRestart = usersMod2.getUser(userA)!.bankroll;
+    const bankrollAfterRestart = (await usersMod2.getUser(userA))!.bankroll;
     expect(bankrollAfterRestart).toBe(afterFirstJoin);
 
     // Step 3: user re-joins same table — must NOT debit again.
     await tables2.joinTable({ tableId: "shadow-hold", userId: userA });
-    const afterRejoin = usersMod2.getUser(userA)!.bankroll;
+    const afterRejoin = (await usersMod2.getUser(userA))!.bankroll;
     expect(afterRejoin).toBe(bankrollAfterRestart);
   });
 });

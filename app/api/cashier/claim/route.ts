@@ -10,13 +10,13 @@ export async function POST() {
   }
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  const result = claimDailyChips(userId, DAILY_AMOUNT);
+  const result = await claimDailyChips(userId, DAILY_AMOUNT);
   if (!result.success) {
     return NextResponse.json(
       { error: "Already claimed", nextClaimAt: result.nextClaimAt },
       { status: 400 },
     );
   }
-  const user = getUser(userId);
+  const user = await getUser(userId);
   return NextResponse.json({ ok: true, bankroll: user?.bankroll ?? null, awarded: DAILY_AMOUNT });
 }

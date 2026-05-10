@@ -55,10 +55,10 @@ function botSeed(tableId: string, idx: number): string {
 export async function joinTable(args: { tableId: string; userId: string }): Promise<{ runtime: Runtime } | { error: string }> {
   const spec = getTableSpec(args.tableId);
   if (!spec) return { error: "Table not found" };
-  const user = getUser(args.userId);
+  const user = await getUser(args.userId);
   if (!user) return { error: "User not found" };
 
-  return withLock(args.tableId, () => {
+  return withLock(args.tableId, async () => {
     let runtime = runtimes.get(args.tableId);
     if (runtime && runtime.userId === args.userId) {
       // Already seated
@@ -69,7 +69,7 @@ export async function joinTable(args: { tableId: string; userId: string }): Prom
     }
     // If the user already has a buy-in committed to this table (e.g. server
     // restarted mid-session), reuse it instead of debiting the bankroll twice.
-    const persistedBuyIn = getTableBuyIn(args.userId, args.tableId);
+    const persistedBuyIn = await getTableBuyIn(args.userId, args.tableId);
     let buyIn: number;
     if (persistedBuyIn !== undefined) {
       buyIn = persistedBuyIn;
@@ -78,10 +78,10 @@ export async function joinTable(args: { tableId: string; userId: string }): Prom
       if (user.bankroll < buyIn) {
         return { error: `Need at least ${buyIn} chips to buy in` };
       }
-      if (!debitBankroll(args.userId, buyIn)) {
+      if (!(await debitBankroll(args.userId, buyIn))) {
         return { error: "Insufficient bankroll" };
       }
-      recordTableBuyIn(args.userId, args.tableId, buyIn);
+      await recordTableBuyIn(args.userId, args.tableId, buyIn);
     }
 
     let s = createTable({ tableId: spec.id, smallBlind: spec.smallBlind, bigBlind: spec.bigBlind });
@@ -150,7 +150,9 @@ function onHandEnded(runtime: Runtime): void {
   const userSeat = runtime.state.seats[runtime.userSeatIdx];
   const endStack = userSeat.stack + userSeat.contributed; // contributed should be 0 after settle but guard anyway
   const delta = endStack - runtime.startOfHandUserStack;
-  recordHandStats(runtime.userId, {
+  // Fire-and-forget: ensureLoaded resolves immediately since users.ts was
+  // hydrated earlier by getOrCreateSessionUser on this request.
+  void recordHandStats(runtime.userId, {
     potParticipated: runtime.state.pot + (runtime.state.lastShowdown?.winners.reduce((s, w) => s + w.amount, 0) ?? 0),
     netDelta: delta,
   });
@@ -184,13 +186,13 @@ export async function actAtTable(args: {
 }
 
 export async function leaveTable(args: { tableId: string; userId: string }): Promise<void> {
-  await withLock(args.tableId, () => {
+  await withLock(args.tableId, async () => {
     const runtime = runtimes.get(args.tableId);
     if (!runtime || runtime.userId !== args.userId) return;
     const userSeat = runtime.state.seats[runtime.userSeatIdx];
     const remaining = userSeat.stack + userSeat.contributed;
-    if (remaining > 0) creditBankroll(args.userId, remaining);
-    clearTableBuyIn(args.userId, args.tableId);
+    if (remaining > 0) await creditBankroll(args.userId, remaining);
+    await clearTableBuyIn(args.userId, args.tableId);
     runtimes.delete(args.tableId);
   });
 }

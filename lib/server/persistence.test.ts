@@ -20,7 +20,7 @@ afterAll(() => {
 describe("persistence", () => {
   it("loadJSON returns fallback when file missing", async () => {
     const { loadJSON } = await import("./persistence");
-    expect(loadJSON("missing.json", { hello: "world" })).toEqual({ hello: "world" });
+    expect(await loadJSON("missing.json", { hello: "world" })).toEqual({ hello: "world" });
   });
 
   it("loadJSON returns fallback on corrupt file", async () => {
@@ -28,7 +28,7 @@ describe("persistence", () => {
     fs.mkdirSync(dataDir, { recursive: true });
     fs.writeFileSync(path.join(dataDir, "corrupt.json"), "{not json", "utf-8");
     const { loadJSON } = await import("./persistence");
-    expect(loadJSON("corrupt.json", { ok: true })).toEqual({ ok: true });
+    expect(await loadJSON("corrupt.json", { ok: true })).toEqual({ ok: true });
   });
 
   it("scheduleSave debounces and writes atomically", async () => {
@@ -43,7 +43,7 @@ describe("persistence", () => {
     // Wait for debounce + write
     await new Promise((r) => setTimeout(r, 700));
 
-    const result = loadJSON<{ count: number }>("counter.json", { count: -1 });
+    const result = await loadJSON<{ count: number }>("counter.json", { count: -1 });
     expect(result).toEqual({ count: 3 });
 
     // No leftover .tmp files
@@ -63,7 +63,7 @@ describe("persistence", () => {
     };
     scheduleSave("complex.json", () => data);
     await new Promise((r) => setTimeout(r, 700));
-    const loaded = loadJSON<typeof data>("complex.json", { users: {} });
+    const loaded = await loadJSON<typeof data>("complex.json", { users: {} });
     expect(loaded).toEqual(data);
   });
 });

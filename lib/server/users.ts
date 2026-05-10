@@ -18,14 +18,25 @@ export type UserRecord = {
 const STARTING_BANKROLL = 10_000;
 const USERS_FILE = "users.json";
 
-const initialUsers = loadJSON<Record<string, UserRecord>>(USERS_FILE, {});
-const users = new Map<string, UserRecord>(Object.entries(initialUsers));
+const users = new Map<string, UserRecord>();
+let loadPromise: Promise<void> | null = null;
+
+function ensureLoaded(): Promise<void> {
+  if (!loadPromise) {
+    loadPromise = (async () => {
+      const initial = await loadJSON<Record<string, UserRecord>>(USERS_FILE, {});
+      for (const [k, v] of Object.entries(initial)) users.set(k, v);
+    })();
+  }
+  return loadPromise;
+}
 
 function persist(): void {
   scheduleSave(USERS_FILE, () => Object.fromEntries(users.entries()));
 }
 
-export function getOrCreateUser(id: string | null): UserRecord {
+export async function getOrCreateUser(id: string | null): Promise<UserRecord> {
+  await ensureLoaded();
   if (id && users.has(id)) return users.get(id)!;
   const newId = id ?? randomBytes(12).toString("hex");
   const user: UserRecord = {
@@ -43,11 +54,13 @@ export function getOrCreateUser(id: string | null): UserRecord {
   return user;
 }
 
-export function getUser(id: string): UserRecord | undefined {
+export async function getUser(id: string): Promise<UserRecord | undefined> {
+  await ensureLoaded();
   return users.get(id);
 }
 
-export function debitBankroll(id: string, amount: number): boolean {
+export async function debitBankroll(id: string, amount: number): Promise<boolean> {
+  await ensureLoaded();
   const u = users.get(id);
   if (!u || u.bankroll < amount) return false;
   u.bankroll -= amount;
@@ -55,17 +68,19 @@ export function debitBankroll(id: string, amount: number): boolean {
   return true;
 }
 
-export function creditBankroll(id: string, amount: number): void {
+export async function creditBankroll(id: string, amount: number): Promise<void> {
+  await ensureLoaded();
   const u = users.get(id);
   if (!u) return;
   u.bankroll += amount;
   persist();
 }
 
-export function recordHandStats(
+export async function recordHandStats(
   id: string,
   args: { potParticipated: number; netDelta: number },
-): void {
+): Promise<void> {
+  await ensureLoaded();
   const u = users.get(id);
   if (!u) return;
   u.handsPlayed += 1;
@@ -74,11 +89,13 @@ export function recordHandStats(
   persist();
 }
 
-export function getTableBuyIn(userId: string, tableId: string): number | undefined {
+export async function getTableBuyIn(userId: string, tableId: string): Promise<number | undefined> {
+  await ensureLoaded();
   return users.get(userId)?.activeBuyIns?.[tableId];
 }
 
-export function recordTableBuyIn(userId: string, tableId: string, amount: number): void {
+export async function recordTableBuyIn(userId: string, tableId: string, amount: number): Promise<void> {
+  await ensureLoaded();
   const u = users.get(userId);
   if (!u) return;
   if (!u.activeBuyIns) u.activeBuyIns = {};
@@ -86,14 +103,16 @@ export function recordTableBuyIn(userId: string, tableId: string, amount: number
   persist();
 }
 
-export function clearTableBuyIn(userId: string, tableId: string): void {
+export async function clearTableBuyIn(userId: string, tableId: string): Promise<void> {
+  await ensureLoaded();
   const u = users.get(userId);
   if (!u || !u.activeBuyIns) return;
   delete u.activeBuyIns[tableId];
   persist();
 }
 
-export function claimDailyChips(id: string, amount: number): { success: boolean; nextClaimAt?: number } {
+export async function claimDailyChips(id: string, amount: number): Promise<{ success: boolean; nextClaimAt?: number }> {
+  await ensureLoaded();
   const u = users.get(id);
   if (!u) return { success: false };
   const now = Date.now();

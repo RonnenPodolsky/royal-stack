@@ -13,7 +13,7 @@ const COOKIE_NAME = "rs_uid";
 export async function getOrCreateSessionUser(): Promise<UserRecord> {
   const session = await auth();
   if (session?.user?.id) {
-    const u = getUser(session.user.id);
+    const u = await getUser(session.user.id);
     if (u) return u;
     // Fallthrough: stale token referencing a deleted user → fall back to anon cookie
   }
