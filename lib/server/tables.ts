@@ -1,5 +1,5 @@
 import { addPlayer, applyAction, createTable, IllegalActionError, publicView, revealPendingStreet, startHand } from "@/lib/poker/engine";
-import { botAction } from "@/lib/poker/bot";
+import { aiBotAction } from "@/lib/poker/bot";
 import { getTable as getTableSpec } from "@/lib/tables";
 import type { Action, GameState } from "@/lib/poker/types";
 import {
@@ -169,7 +169,7 @@ export async function tickTable(args: { tableId: string; userId: string }): Prom
 
   // 3. One bot action per tick — deferDeal so the round-closing action
   //    doesn't bundle the next street's cards into the same response.
-  const action = botAction(s, s.toActIdx);
+  const action = await aiBotAction(s, s.toActIdx);
   try {
     runtime.state = applyAction(s, s.toActIdx, action, { deferDeal: true });
   } catch (e) {
